@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Memory — Live Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0e14; color: #e6e9f0; font-family: -apple-system, system-ui, sans-serif; height: 100dvh; display: flex; flex-direction: column; }
+  header { padding: 14px 16px; border-bottom: 1px solid #1c2230; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header h1 span { color: #7c5cff; }
+  #meta { font-size: 12px; color: #8b93a7; }
+  #fresh { background: none; border: 1px solid #2a3348; color: #8b93a7; border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 15px; line-height: 1.45; white-space: pre-line; }
+  .user { align-self: flex-end; background: #7c5cff; color: #fff; border-bottom-right-radius: 4px; }
+  .bot { align-self: flex-start; background: #161c2a; border-bottom-left-radius: 4px; }
+  .tag { align-self: flex-start; font-size: 11px; color: #7c5cff; background: #1a1430; border: 1px solid #2c2350; padding: 4px 10px; border-radius: 20px; margin-top: -6px; }
+  #hint { padding: 10px 16px; font-size: 12px; color: #5b6478; border-top: 1px solid #1c2230; }
+  #form { display: flex; gap: 8px; padding: 12px 16px 16px; }
+  #input { flex: 1; background: #161c2a; border: 1px solid #2a3348; color: #e6e9f0; border-radius: 12px; padding: 12px; font-size: 15px; outline: none; }
+  #send { background: #7c5cff; border: none; color: #fff; border-radius: 12px; padding: 0 20px; font-size: 15px; cursor: pointer; }
+  .typing { color: #8b93a7; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>🧠</span> Agent Memory — live demo</h1>
+  <div><span id="meta">0 memories</span> <button id="fresh">start fresh</button></div>
+</header>
+<div id="chat"></div>
+<div id="hint">Try: "my name is …" → "I own …" → refresh the page → "do you remember me?"</div>
+<form id="form">
+  <input id="input" autocomplete="off" placeholder="Say something…">
+  <button id="send" type="submit">Send</button>
+</form>
+<script>
+let key = localStorage.getItem('am_demo_key');
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const meta = document.getElementById('meta');
+
+async function ensureKey() {
+  if (!key) {
+    const r = await fetch('/demo/key', {method: 'POST'});
+    key = (await r.json()).api_key;
+    localStorage.setItem('am_demo_key', key);
+  }
+}
+function addMsg(text, cls) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.textContent = text;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+function addTag(text) {
+  const d = document.createElement('div');
+  d.className = 'tag';
+  d.textContent = text;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+async function send(text) {
+  addMsg(text, 'user');
+  input.value = '';
+  const t = addMsg('…', 'bot typing');
+  const r = await fetch('/demo/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({api_key: key, message: text})
+  });
+  t.remove();
+  const data = await r.json();
+  addMsg(data.reply, 'bot');
+  (data.stored || []).forEach(s => addTag('🧠 remembered: ' + s));
+  if ((data.recalled || []).length && !(data.stored || []).length)
+    addTag('🔍 recalled ' + data.recalled.length + ' memor' + (data.recalled.length > 1 ? 'ies' : 'y'));
+  meta.textContent = data.memory_count + (data.memory_count === 1 ? ' memory' : ' memories');
+}
+document.getElementById('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = input.value.trim();
+  if (v) send(v);
+});
+document.getElementById('fresh').addEventListener('click', async () => {
+  localStorage.removeItem('am_demo_key');
+  key = null;
+  await ensureKey();
+  chat.innerHTML = '';
+  meta.textContent = '0 memories';
+  addMsg("Fresh identity. I know nothing about you now — prove the memory works.", 'bot');
+});
+(async () => {
+  await ensureKey();
+  const r = await fetch('/demo/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({api_key: key, message: 'hi'})
+  });
+  const data = await r.json();
+  addMsg(data.reply, 'bot');
+  meta.textContent = data.memory_count + (data.memory_count === 1 ? ' memory' : ' memories');
+})();
+</script>
+</body>
+</html>
